@@ -79,6 +79,9 @@ impl Object for Sphere {
     fn intersect<'a>(&'a self, ray: &Ray) -> Option<Hit<'a>> {
         let distance_to_center = self.center - ray.start;
         let v = distance_to_center.dot(ray.direction);
+        if v < 0.0 {
+            return None;
+        }
         let disc = self.size.powf(2.0) - (distance_to_center.dot(distance_to_center) - v.powf(2.0));
 
         if disc < 0.0 {
