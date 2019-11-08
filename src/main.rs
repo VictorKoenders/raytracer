@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate itertools;
-
 mod color;
 mod math;
 mod ray;
@@ -11,10 +8,7 @@ pub use crate::math::Vector3;
 pub use crate::ray::{Hit, Ray};
 pub use crate::scene::{Object, Scene, Sphere};
 
-use rayon::prelude::*;
-
 fn main() {
-    let start = time::precise_time_s();
     let mut scene = Scene::new(Color::black());
     scene.ambient_lights.push(Color::new(0.1, 0.1, 0.1));
     scene
@@ -42,10 +36,12 @@ fn main() {
     const IMAGE_WIDTH: u32 = 600;
     const IMAGE_HEIGHT: u32 = 600;
 
-    let pixels = iproduct!(0..IMAGE_WIDTH, 0..IMAGE_HEIGHT).collect::<Vec<_>>();
+    let pixels: Vec<(u32, u32)> = (0..IMAGE_WIDTH)
+        .flat_map(|x| (0..IMAGE_HEIGHT).map(move |y| (x, y)))
+        .collect::<Vec<_>>();
 
     let pixels = pixels
-        .into_par_iter()
+        .into_iter()
         .map(|(x, y)| {
             let fx = (x as f32) / 50. - 5.5;
             let fy = (y as f32) / 50. - 5.5;
@@ -53,28 +49,27 @@ fn main() {
                 start: Vector3::new(0.0, fx, fy),
                 direction: Vector3::new(1.0, 0.0, 0.0),
             };
-            let color = calculate_color(&scene, ray, 10);
-            (x, y, color)
+            calculate_color(&scene, ray, 10)
         })
         .collect::<Vec<_>>();
-    println!("Generated in {:.3} seconds", time::precise_time_s() - start);
-    let start = time::precise_time_s();
 
-    let mut img = image::ImageBuffer::new(IMAGE_WIDTH, IMAGE_HEIGHT);
-    for (x, y, color) in pixels {
-        img.put_pixel(
-            x,
-            y,
-            image::Rgba([
-                (color.r * 255.0) as u8,
-                (color.g * 255.0) as u8,
-                (color.b * 255.0) as u8,
-                255,
-            ]),
-        )
+    let mut bytes = Vec::with_capacity(pixels.len() * 4);
+    for pixel in pixels {
+        bytes.push((pixel.r * 255.0) as u8);
+        bytes.push((pixel.g * 255.0) as u8);
+        bytes.push((pixel.b * 255.0) as u8);
+        bytes.push(255);
     }
-    img.save("out.png").expect("Could not save image");
-    println!("Exported in {:.3} seconds", time::precise_time_s() - start);
+
+    let path = std::path::Path::new("out.png");
+    let file = std::fs::File::create(path).unwrap();
+    let w = std::io::BufWriter::new(file);
+
+    let mut encoder = png::Encoder::new(w, IMAGE_WIDTH, IMAGE_HEIGHT);
+    encoder.set_color(png::ColorType::RGBA);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().unwrap();
+    writer.write_image_data(&bytes).unwrap();
 }
 
 fn calculate_color(scene: &Scene, mut ray: Ray, max_bounces: usize) -> Color {
